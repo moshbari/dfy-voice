@@ -7,8 +7,9 @@ from contextlib import asynccontextmanager
 
 import torch
 import torchaudio
+from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("dfy-voice")
@@ -72,6 +73,11 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+
+@app.get("/", include_in_schema=False)
+async def root():
+    return FileResponse(Path(__file__).parent / "index.html", media_type="text/html")
 
 
 def wav_to_mp3(wav_tensor: torch.Tensor, sample_rate: int) -> io.BytesIO:
