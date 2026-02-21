@@ -1,5 +1,6 @@
 import io
 import os
+import re
 import time
 import uuid
 import logging
@@ -15,6 +16,10 @@ from fastapi.responses import StreamingResponse, FileResponse
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("dfy-voice")
+
+# CPU optimizations: use all cores and allow faster (slightly less precise) matmul
+torch.set_num_threads(os.cpu_count() or 4)
+torch.set_float32_matmul_precision("medium")
 
 # Global model references
 tts_model = None
@@ -74,6 +79,29 @@ def cleanup_old_jobs():
         jobs.pop(jid, None)
 
 
+def split_into_chunks(text: str, max_chars: int = 250) -> list[str]:
+    """Split text into sentence-level chunks for faster generation.
+
+    Long text causes quadratic slowdown in the transformer's attention.
+    Splitting into short chunks and concatenating the audio is much faster.
+    """
+    # Split on sentence-ending punctuation, keeping the delimiter
+    parts = re.split(r'(?<=[.!?])\s+', text.strip())
+
+    chunks = []
+    current = ""
+    for part in parts:
+        if current and len(current) + len(part) + 1 > max_chars:
+            chunks.append(current.strip())
+            current = part
+        else:
+            current = (current + " " + part).strip() if current else part
+    if current:
+        chunks.append(current.strip())
+
+    return chunks if chunks else [text]
+
+
 def run_tts_job(job_id: str, text: str, language: str, voice_path: str | None, clone_path: str | None):
     """Run TTS generation in a background thread."""
     job = jobs[job_id]
@@ -81,15 +109,38 @@ def run_tts_job(job_id: str, text: str, language: str, voice_path: str | None, c
         job["status"] = "generating"
         job["started"] = time.time()
 
-        if clone_path:
-            wav = tts_model.generate(text, audio_prompt_path=clone_path)
-            sr = tts_model.sr
-        elif language == "en":
-            wav = tts_model.generate(text, audio_prompt_path=voice_path)
-            sr = tts_model.sr
+        chunks = split_into_chunks(text)
+        total = len(chunks)
+        job["chunks_total"] = total
+        job["chunks_done"] = 0
+        logger.info(f"Job {job_id}: generating {total} chunk(s)")
+
+        wav_parts = []
+        for i, chunk in enumerate(chunks):
+            logger.info(f"Job {job_id}: chunk {i+1}/{total} ({len(chunk)} chars)")
+            if clone_path:
+                wav = tts_model.generate(chunk, audio_prompt_path=clone_path)
+                sr = tts_model.sr
+            elif language == "en":
+                wav = tts_model.generate(chunk, audio_prompt_path=voice_path)
+                sr = tts_model.sr
+            else:
+                wav = multilingual_model.generate(chunk, language_id=language)
+                sr = multilingual_model.sr
+            wav_parts.append(wav)
+            job["chunks_done"] = i + 1
+
+        # Concatenate all chunks with small silence gaps
+        if len(wav_parts) > 1:
+            gap = torch.zeros(1, int(sr * 0.3))  # 300ms silence between chunks
+            combined = []
+            for j, part in enumerate(wav_parts):
+                combined.append(part)
+                if j < len(wav_parts) - 1:
+                    combined.append(gap)
+            wav = torch.cat(combined, dim=1)
         else:
-            wav = multilingual_model.generate(text, language_id=language)
-            sr = multilingual_model.sr
+            wav = wav_parts[0]
 
         job["status"] = "converting"
 
@@ -264,14 +315,15 @@ async def tts_status(job_id: str):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    # Estimate progress based on elapsed time (~35s average on CPU)
+    # Progress based on chunks completed (real progress, not time estimate)
     progress = 0
     if job["status"] == "queued":
         progress = 0
     elif job["status"] == "generating":
-        elapsed = time.time() - (job["started"] or job["created"])
-        # Ease toward 90% over ~35 seconds
-        progress = min(90, int((elapsed / 35) * 90))
+        total = job.get("chunks_total", 1)
+        done = job.get("chunks_done", 0)
+        # Map chunk progress to 0-90% range
+        progress = int((done / total) * 90) if total > 0 else 0
     elif job["status"] == "converting":
         progress = 95
     elif job["status"] == "done":
