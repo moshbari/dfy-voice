@@ -264,14 +264,16 @@ async def tts_status(job_id: str):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    # Estimate progress based on elapsed time (~35s average on CPU)
+    # Estimate progress based on elapsed time
     progress = 0
     if job["status"] == "queued":
         progress = 0
     elif job["status"] == "generating":
         elapsed = time.time() - (job["started"] or job["created"])
-        # Ease toward 90% over ~35 seconds
-        progress = min(90, int((elapsed / 35) * 90))
+        # Asymptotic curve: always climbing, never stuck at a cap.
+        # Approaches 90% but keeps moving — feels alive even on slow hardware.
+        # At 30s → ~43%, 60s → ~63%, 120s → ~78%, 300s → ~88%, 600s → ~89%
+        progress = int(90 * (1 - 1 / (1 + elapsed / 45)))
     elif job["status"] == "converting":
         progress = 95
     elif job["status"] == "done":
