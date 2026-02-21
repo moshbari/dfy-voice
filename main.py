@@ -4,6 +4,7 @@ import re
 import time
 import uuid
 import logging
+import resource
 import tempfile
 import threading
 from contextlib import asynccontextmanager
@@ -14,7 +15,14 @@ from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import StreamingResponse, FileResponse
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler("dfy-voice.log"),
+    ],
+)
 logger = logging.getLogger("dfy-voice")
 
 # CPU optimizations: use all cores and allow faster (slightly less precise) matmul
@@ -102,12 +110,18 @@ def split_into_chunks(text: str, max_chars: int = 250) -> list[str]:
     return chunks if chunks else [text]
 
 
+def _mem_mb():
+    """Current process RSS in MB."""
+    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+
+
 def run_tts_job(job_id: str, text: str, language: str, voice_path: str | None, clone_path: str | None):
     """Run TTS generation in a background thread."""
     job = jobs[job_id]
     try:
         job["status"] = "generating"
         job["started"] = time.time()
+        logger.info(f"Job {job_id}: memory {_mem_mb():.0f} MB at start")
 
         chunks = split_into_chunks(text)
         total = len(chunks)
@@ -129,6 +143,7 @@ def run_tts_job(job_id: str, text: str, language: str, voice_path: str | None, c
                 sr = multilingual_model.sr
             wav_parts.append(wav)
             job["chunks_done"] = i + 1
+            logger.info(f"Job {job_id}: chunk {i+1} done, memory {_mem_mb():.0f} MB")
 
         # Concatenate all chunks with small silence gaps
         if len(wav_parts) > 1:
