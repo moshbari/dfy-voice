@@ -1,0 +1,22 @@
+name: Deploy DFY Voice
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.CONTABO_HOST }}
+          username: ${{ secrets.CONTABO_USER }}
+          key: ${{ secrets.CONTABO_SSH_KEY }}
+          script: |
+            cd /opt/dfy-voice
+            git pull origin main
+            docker compose down
+            docker compose up -d --build
+            echo "✅ DFY Voice deployed successfully!"
