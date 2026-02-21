@@ -1,8 +1,10 @@
 import io
 import os
 import time
+import uuid
 import logging
 import tempfile
+import threading
 from contextlib import asynccontextmanager
 
 import torch
@@ -20,6 +22,10 @@ multilingual_model = None
 
 # Voices directory
 VOICES_DIR = Path(__file__).parent / "voices"
+
+# Job tracking for async generation
+jobs: dict = {}
+JOB_TTL = 300  # auto-cleanup after 5 minutes
 
 # Languages that require the multilingual model
 MULTILINGUAL_LANGS = {
@@ -58,6 +64,51 @@ def load_models():
         torch.load = _original_torch_load
 
     logger.info(f"ChatterboxMultilingual loaded in {time.time() - start:.1f}s")
+
+
+def cleanup_old_jobs():
+    """Remove jobs older than JOB_TTL seconds."""
+    now = time.time()
+    expired = [jid for jid, j in jobs.items() if now - j["created"] > JOB_TTL]
+    for jid in expired:
+        jobs.pop(jid, None)
+
+
+def run_tts_job(job_id: str, text: str, language: str, voice_path: str | None, clone_path: str | None):
+    """Run TTS generation in a background thread."""
+    job = jobs[job_id]
+    try:
+        job["status"] = "generating"
+        job["started"] = time.time()
+
+        if clone_path:
+            wav = tts_model.generate(text, audio_prompt_path=clone_path)
+            sr = tts_model.sr
+        elif language == "en":
+            wav = tts_model.generate(text, audio_prompt_path=voice_path)
+            sr = tts_model.sr
+        else:
+            wav = multilingual_model.generate(text, language_id=language)
+            sr = multilingual_model.sr
+
+        job["status"] = "converting"
+
+        mp3_buf = io.BytesIO()
+        torchaudio.save(mp3_buf, wav, sr, format="mp3")
+        mp3_buf.seek(0)
+
+        job["result"] = mp3_buf.getvalue()
+        job["status"] = "done"
+
+    except Exception as e:
+        logger.exception("TTS job failed")
+        job["status"] = "error"
+        job["error"] = str(e)
+    finally:
+        job["finished"] = time.time()
+        # Clean up temp clone file
+        if clone_path and os.path.exists(clone_path):
+            os.unlink(clone_path)
 
 
 @asynccontextmanager
@@ -113,17 +164,25 @@ async def list_voices():
     return {"voices": voices}
 
 
+@app.get("/voices/{name}/preview")
+async def voice_preview(name: str):
+    """Serve the raw WAV file for a voice preview."""
+    vfile = VOICES_DIR / f"{name}.wav"
+    if not vfile.exists():
+        raise HTTPException(status_code=404, detail=f"Voice '{name}' not found")
+    return FileResponse(vfile, media_type="audio/wav")
+
+
 @app.post("/tts")
 async def text_to_speech(
     text: str = Form(..., description="Text to synthesise"),
     language: str = Form("en", description="Language code (e.g. en, fr, de, es, zh)"),
     voice: str = Form("", description="Pre-loaded voice name (e.g. Emily, Adrian). Leave empty for default."),
 ):
-    """Generate speech from text. Returns MP3 audio."""
+    """Start async TTS generation. Returns a job_id to poll for progress."""
     if not text.strip():
         raise HTTPException(status_code=400, detail="Text must not be empty")
 
-    # Resolve voice file path if a pre-loaded voice is selected
     voice_path = None
     if voice:
         vfile = VOICES_DIR / f"{voice}.wav"
@@ -131,30 +190,32 @@ async def text_to_speech(
             raise HTTPException(status_code=400, detail=f"Voice '{voice}' not found")
         voice_path = str(vfile)
 
-    try:
-        if language == "en":
-            wav = tts_model.generate(text, audio_prompt_path=voice_path)
-            sr = tts_model.sr
-        elif language in MULTILINGUAL_LANGS:
-            wav = multilingual_model.generate(text, language_id=language)
-            sr = multilingual_model.sr
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Unsupported language: {language}. Supported: en, {', '.join(sorted(MULTILINGUAL_LANGS))}",
-            )
-
-        mp3_buf = wav_to_mp3(wav, sr)
-        return StreamingResponse(
-            mp3_buf,
-            media_type="audio/mpeg",
-            headers={"Content-Disposition": 'attachment; filename="speech.mp3"'},
+    if language != "en" and language not in MULTILINGUAL_LANGS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported language: {language}. Supported: en, {', '.join(sorted(MULTILINGUAL_LANGS))}",
         )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception("TTS generation failed")
-        raise HTTPException(status_code=500, detail=str(e))
+
+    cleanup_old_jobs()
+
+    job_id = str(uuid.uuid4())[:8]
+    jobs[job_id] = {
+        "status": "queued",
+        "created": time.time(),
+        "started": None,
+        "finished": None,
+        "result": None,
+        "error": None,
+    }
+
+    thread = threading.Thread(
+        target=run_tts_job,
+        args=(job_id, text, language, voice_path, None),
+        daemon=True,
+    )
+    thread.start()
+
+    return {"job_id": job_id}
 
 
 @app.post("/tts-clone")
@@ -162,33 +223,88 @@ async def text_to_speech_clone(
     text: str = Form(..., description="Text to synthesise"),
     voice: UploadFile = File(..., description="Reference WAV file (~10s) for voice cloning"),
 ):
-    """Generate speech in a cloned voice. Upload a ~10 second WAV sample. Returns MP3 audio."""
+    """Start async voice-cloned TTS generation. Returns a job_id to poll for progress."""
     if not text.strip():
         raise HTTPException(status_code=400, detail="Text must not be empty")
 
     if not voice.filename.lower().endswith(".wav"):
         raise HTTPException(status_code=400, detail="Voice sample must be a WAV file")
 
-    tmp_path = None
-    try:
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-            tmp.write(await voice.read())
-            tmp_path = tmp.name
+    # Save uploaded file to temp
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+        tmp.write(await voice.read())
+        clone_path = tmp.name
 
-        wav = tts_model.generate(text, audio_prompt_path=tmp_path)
-        mp3_buf = wav_to_mp3(wav, tts_model.sr)
+    cleanup_old_jobs()
 
-        return StreamingResponse(
-            mp3_buf,
-            media_type="audio/mpeg",
-            headers={"Content-Disposition": 'attachment; filename="cloned_speech.mp3"'},
-        )
-    except Exception as e:
-        logger.exception("Voice cloning failed")
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if tmp_path and os.path.exists(tmp_path):
-            os.unlink(tmp_path)
+    job_id = str(uuid.uuid4())[:8]
+    jobs[job_id] = {
+        "status": "queued",
+        "created": time.time(),
+        "started": None,
+        "finished": None,
+        "result": None,
+        "error": None,
+    }
+
+    thread = threading.Thread(
+        target=run_tts_job,
+        args=(job_id, text, "en", None, clone_path),
+        daemon=True,
+    )
+    thread.start()
+
+    return {"job_id": job_id}
+
+
+@app.get("/tts/status/{job_id}")
+async def tts_status(job_id: str):
+    """Poll generation progress."""
+    job = jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    # Estimate progress based on elapsed time (~35s average on CPU)
+    progress = 0
+    if job["status"] == "queued":
+        progress = 0
+    elif job["status"] == "generating":
+        elapsed = time.time() - (job["started"] or job["created"])
+        # Ease toward 90% over ~35 seconds
+        progress = min(90, int((elapsed / 35) * 90))
+    elif job["status"] == "converting":
+        progress = 95
+    elif job["status"] == "done":
+        progress = 100
+    elif job["status"] == "error":
+        progress = 0
+
+    return {
+        "status": job["status"],
+        "progress": progress,
+        "error": job.get("error"),
+    }
+
+
+@app.get("/tts/result/{job_id}")
+async def tts_result(job_id: str):
+    """Download the generated MP3."""
+    job = jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job["status"] != "done":
+        raise HTTPException(status_code=400, detail="Job not finished yet")
+
+    mp3_data = job["result"]
+    # Clean up job after download
+    jobs.pop(job_id, None)
+
+    return StreamingResponse(
+        io.BytesIO(mp3_data),
+        media_type="audio/mpeg",
+        headers={"Content-Disposition": 'attachment; filename="speech.mp3"'},
+    )
 
 
 if __name__ == "__main__":
