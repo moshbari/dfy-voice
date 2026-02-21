@@ -643,8 +643,10 @@ function hideProgress() {
   document.getElementById('progressSection').classList.remove('visible');
 }
 function updateProgress(pct, label) {
-  document.getElementById('progressFill').style.width = pct + '%';
-  document.getElementById('progressPercent').textContent = pct + '%';
+  if (pct !== null && pct !== undefined) {
+    document.getElementById('progressFill').style.width = pct + '%';
+    document.getElementById('progressPercent').textContent = pct + '%';
+  }
   if (label) document.getElementById('progressLabel').textContent = label;
 }
 
@@ -669,73 +671,132 @@ async function generate() {
     document.getElementById('progressStatus').textContent = 'Elapsed: ' + elapsed + 's';
   }, 1000);
 
-  try {
-    // Submit job
-    const formData = new FormData();
-    formData.append('text', text);
+  const MAX_RETRIES = 50;
+  let attempt = 0;
 
-    let url = '/tts';
-    if (voiceFile) {
-      formData.append('voice', voiceFile);
-      url = '/tts-clone';
-    } else {
-      formData.append('language', language);
-      if (selectedVoice) {
-        formData.append('voice', selectedVoice);
+  while (attempt < MAX_RETRIES) {
+    attempt++;
+    try {
+      if (attempt > 1) {
+        const wait = Math.min(attempt * 2, 10);
+        updateProgress(0, 'Retrying in ' + wait + 's... (attempt ' + attempt + ')');
+        await new Promise(r => setTimeout(r, wait * 1000));
+        updateProgress(0, 'Retrying... (attempt ' + attempt + ')');
       }
-    }
 
-    const submitRes = await fetch(url, { method: 'POST', body: formData });
-    if (!submitRes.ok) {
-      const err = await submitRes.json();
-      throw new Error(err.detail || 'Failed to start generation');
-    }
-    const { job_id } = await submitRes.json();
+      // Submit job (with network retry)
+      const formData = new FormData();
+      formData.append('text', text);
 
-    // Poll for progress
-    while (true) {
-      await new Promise(r => setTimeout(r, 500));
-
-      const statusRes = await fetch('/tts/status/' + job_id);
-      if (!statusRes.ok) throw new Error('Failed to check status');
-
-      const status = await statusRes.json();
-
-      if (status.status === 'queued') {
-        updateProgress(0, 'Queued...');
-      } else if (status.status === 'generating') {
-        updateProgress(status.progress, 'Generating audio...');
-      } else if (status.status === 'converting') {
-        updateProgress(95, 'Converting to MP3...');
-      } else if (status.status === 'done') {
-        updateProgress(100, 'Done!');
-        break;
-      } else if (status.status === 'error') {
-        throw new Error(status.error || 'Generation failed');
+      let url = '/tts';
+      if (voiceFile) {
+        formData.append('voice', voiceFile);
+        url = '/tts-clone';
+      } else {
+        formData.append('language', language);
+        if (selectedVoice) {
+          formData.append('voice', selectedVoice);
+        }
       }
+
+      let submitRes;
+      for (let net = 0; net < 3; net++) {
+        try {
+          submitRes = await fetch(url, { method: 'POST', body: formData });
+          break;
+        } catch (netErr) {
+          if (net === 2) throw netErr;
+          await new Promise(r => setTimeout(r, (net + 1) * 2000));
+        }
+      }
+
+      if (!submitRes.ok) {
+        const err = await submitRes.json();
+        const detail = err.detail || 'Failed to start generation';
+        // Don't retry client errors (bad input)
+        if (submitRes.status >= 400 && submitRes.status < 500) {
+          showError(detail);
+          break;
+        }
+        throw new Error(detail);
+      }
+      const { job_id } = await submitRes.json();
+
+      // Poll for progress
+      let pollFails = 0;
+      let jobDone = false;
+      while (true) {
+        await new Promise(r => setTimeout(r, 500));
+
+        let statusRes;
+        try {
+          statusRes = await fetch('/tts/status/' + job_id);
+        } catch (netErr) {
+          pollFails++;
+          if (pollFails > 5) throw new Error('Lost connection to server');
+          updateProgress(null, 'Reconnecting...');
+          await new Promise(r => setTimeout(r, pollFails * 2000));
+          continue;
+        }
+        pollFails = 0;
+
+        if (!statusRes.ok) throw new Error('Failed to check status');
+        const status = await statusRes.json();
+
+        if (status.status === 'queued') {
+          updateProgress(0, attempt > 1 ? 'Queued... (attempt ' + attempt + ')' : 'Queued...');
+        } else if (status.status === 'generating') {
+          updateProgress(status.progress, attempt > 1 ? 'Generating audio... (attempt ' + attempt + ')' : 'Generating audio...');
+        } else if (status.status === 'converting') {
+          updateProgress(95, 'Converting to MP3...');
+        } else if (status.status === 'done') {
+          updateProgress(100, 'Done!');
+          jobDone = true;
+          break;
+        } else if (status.status === 'error') {
+          throw new Error(status.error || 'Generation failed');
+        }
+      }
+
+      if (!jobDone) continue;
+
+      // Download result (with network retry)
+      let resultRes;
+      for (let net = 0; net < 3; net++) {
+        try {
+          resultRes = await fetch('/tts/result/' + job_id);
+          if (resultRes.ok) break;
+        } catch (netErr) {
+          if (net === 2) throw netErr;
+          await new Promise(r => setTimeout(r, (net + 1) * 2000));
+        }
+      }
+      if (!resultRes.ok) throw new Error('Failed to download audio');
+
+      audioBlob = await resultRes.blob();
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      const sizeKB = (audioBlob.size / 1024).toFixed(0);
+
+      const audioUrl = URL.createObjectURL(audioBlob);
+      playerAudio.src = audioUrl;
+      playerAudio.play();
+
+      document.getElementById('resultMeta').textContent = elapsed + 's \u00b7 ' + sizeKB + ' KB' + (attempt > 1 ? ' \u00b7 ' + attempt + ' attempts' : '');
+      result.classList.add('visible');
+      break; // Success — exit retry loop
+
+    } catch (e) {
+      console.error('Attempt ' + attempt + ' failed:', e.message);
+      if (attempt >= MAX_RETRIES) {
+        showError('Failed after ' + MAX_RETRIES + ' attempts. Last error: ' + e.message);
+      }
+      // Otherwise loop continues to next attempt
     }
-
-    // Download result
-    const resultRes = await fetch('/tts/result/' + job_id);
-    if (!resultRes.ok) throw new Error('Failed to download audio');
-
-    audioBlob = await resultRes.blob();
-    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-    const sizeKB = (audioBlob.size / 1024).toFixed(0);
-
-    const audioUrl = URL.createObjectURL(audioBlob);
-    playerAudio.src = audioUrl;
-    playerAudio.play();
-
-    document.getElementById('resultMeta').textContent = elapsed + 's \u00b7 ' + sizeKB + ' KB';
-    result.classList.add('visible');
-  } catch (e) {
-    showError(e.message);
-  } finally {
-    btn.disabled = false;
-    clearInterval(timerInterval);
-    setTimeout(() => hideProgress(), 600);
   }
+
+  btn.disabled = false;
+  clearInterval(timerInterval);
+  setTimeout(() => hideProgress(), 600);
 }
 
 // Custom audio player controls
