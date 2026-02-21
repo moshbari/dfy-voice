@@ -125,7 +125,7 @@ def run_tts_job(job_id: str, text: str, language: str, voice_path: str | None, c
                 wav = tts_model.generate(chunk, audio_prompt_path=voice_path)
                 sr = tts_model.sr
             else:
-                wav = multilingual_model.generate(chunk, language_id=language)
+                wav = multilingual_model.generate(chunk, language_id=language, cfg_weight=0.3)
                 sr = multilingual_model.sr
             wav_parts.append(wav)
             job["chunks_done"] = i + 1
