@@ -14,6 +14,7 @@ RUN pip install --no-cache-dir --upgrade pip \
 
 COPY main.py .
 COPY index.html .
+COPY voices/ ./voices/
 
 EXPOSE 8000
 

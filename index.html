@@ -214,6 +214,12 @@
 
   <div class="row">
     <div>
+      <label for="voiceSelect">Voice</label>
+      <select id="voiceSelect">
+        <option value="">Default</option>
+      </select>
+    </div>
+    <div>
       <label for="language">Language</label>
       <select id="language">
         <option value="en">English</option>
@@ -240,9 +246,9 @@
   </div>
 
   <div class="file-upload">
-    <label for="voice">Voice Clone (optional)</label>
-    <input type="file" id="voice" accept=".wav">
-    <p class="file-hint">Upload a ~10 second WAV recording to clone that voice. Leave empty for default voice.</p>
+    <label for="voiceFile">Or Upload Custom Voice (optional)</label>
+    <input type="file" id="voiceFile" accept=".wav">
+    <p class="file-hint">Upload a ~10 second WAV recording to clone that voice. Overrides the dropdown above.</p>
   </div>
 
   <button class="btn-generate" id="generateBtn" onclick="generate()">Generate Speech</button>
@@ -271,6 +277,24 @@ textEl.addEventListener('input', () => {
   charCount.textContent = textEl.value.length;
 });
 
+// Load available voices on page load
+async function loadVoices() {
+  try {
+    const res = await fetch('/voices');
+    const data = await res.json();
+    const select = document.getElementById('voiceSelect');
+    data.voices.forEach(name => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      select.appendChild(opt);
+    });
+  } catch (e) {
+    console.error('Failed to load voices:', e);
+  }
+}
+loadVoices();
+
 function showError(msg) {
   const el = document.getElementById('error');
   el.textContent = msg;
@@ -287,7 +311,8 @@ async function generate() {
   if (!text) { showError('Please enter some text.'); return; }
 
   const language = document.getElementById('language').value;
-  const voiceFile = document.getElementById('voice').files[0];
+  const voiceSelect = document.getElementById('voiceSelect').value;
+  const voiceFile = document.getElementById('voiceFile').files[0];
   const btn = document.getElementById('generateBtn');
   const spinner = document.getElementById('spinner');
   const result = document.getElementById('result');
@@ -302,10 +327,14 @@ async function generate() {
 
     let url = '/tts';
     if (voiceFile) {
+      // Custom upload overrides everything
       formData.append('voice', voiceFile);
       url = '/tts-clone';
     } else {
       formData.append('language', language);
+      if (voiceSelect) {
+        formData.append('voice', voiceSelect);
+      }
     }
 
     const res = await fetch(url, { method: 'POST', body: formData });

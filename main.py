@@ -18,6 +18,9 @@ logger = logging.getLogger("dfy-voice")
 tts_model = None
 multilingual_model = None
 
+# Voices directory
+VOICES_DIR = Path(__file__).parent / "voices"
+
 # Languages that require the multilingual model
 MULTILINGUAL_LANGS = {
     "ar", "cs", "de", "es", "fr", "hi", "hu", "it", "ja", "ko",
@@ -100,18 +103,37 @@ async def health():
     }
 
 
+@app.get("/voices")
+async def list_voices():
+    """List available pre-loaded voices."""
+    voices = []
+    if VOICES_DIR.exists():
+        for f in sorted(VOICES_DIR.glob("*.wav")):
+            voices.append(f.stem)
+    return {"voices": voices}
+
+
 @app.post("/tts")
 async def text_to_speech(
     text: str = Form(..., description="Text to synthesise"),
     language: str = Form("en", description="Language code (e.g. en, fr, de, es, zh)"),
+    voice: str = Form("", description="Pre-loaded voice name (e.g. Emily, Adrian). Leave empty for default."),
 ):
     """Generate speech from text. Returns MP3 audio."""
     if not text.strip():
         raise HTTPException(status_code=400, detail="Text must not be empty")
 
+    # Resolve voice file path if a pre-loaded voice is selected
+    voice_path = None
+    if voice:
+        vfile = VOICES_DIR / f"{voice}.wav"
+        if not vfile.exists():
+            raise HTTPException(status_code=400, detail=f"Voice '{voice}' not found")
+        voice_path = str(vfile)
+
     try:
         if language == "en":
-            wav = tts_model.generate(text)
+            wav = tts_model.generate(text, audio_prompt_path=voice_path)
             sr = tts_model.sr
         elif language in MULTILINGUAL_LANGS:
             wav = multilingual_model.generate(text, language_id=language)
