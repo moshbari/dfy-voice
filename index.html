@@ -3,272 +3,589 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>DFY Voice</title>
+<title>DFY Voice - AI Text to Speech</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
+  :root {
+    --bg: #06060a;
+    --surface: #0d0d14;
+    --surface-2: #13131e;
+    --border: rgba(255,255,255,0.06);
+    --border-hover: rgba(255,255,255,0.12);
+    --text: #f0f0f5;
+    --text-secondary: #7a7a8e;
+    --accent: #7c5cfc;
+    --accent-hover: #6a4ae8;
+    --accent-glow: rgba(124,92,252,0.25);
+    --green: #10b981;
+    --green-glow: rgba(16,185,129,0.2);
+    --red: #ef4444;
+    --radius: 12px;
+    --radius-lg: 16px;
+  }
+
   body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: #0f1117;
-    color: #e1e4e8;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    color: var(--text);
     min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Animated gradient background */
+  body::before {
+    content: '';
+    position: fixed;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(ellipse at 20% 50%, rgba(124,92,252,0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 20%, rgba(16,185,129,0.06) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 80%, rgba(124,92,252,0.04) 0%, transparent 50%);
+    animation: bgShift 20s ease-in-out infinite alternate;
+    z-index: -1;
+  }
+
+  @keyframes bgShift {
+    0% { transform: translate(0, 0); }
+    100% { transform: translate(-5%, -3%); }
+  }
+
+  .page {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 48px 24px 80px;
+  }
+
+  /* Header */
+  .header {
+    text-align: center;
+    margin-bottom: 48px;
+  }
+
+  .logo {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+
+  .logo-icon {
+    width: 44px;
+    height: 44px;
+    background: linear-gradient(135deg, var(--accent), #a78bfa);
+    border-radius: 12px;
     display: flex;
+    align-items: center;
     justify-content: center;
-    padding: 40px 20px;
+    box-shadow: 0 4px 20px var(--accent-glow);
   }
 
-  .container {
-    width: 100%;
-    max-width: 640px;
+  .logo-icon svg { width: 24px; height: 24px; fill: #fff; }
+
+  .logo-text {
+    font-size: 1.75rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    background: linear-gradient(135deg, #fff 0%, #c4b5fd 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
   }
 
-  h1 {
-    font-size: 2rem;
-    font-weight: 700;
-    margin-bottom: 4px;
-    color: #fff;
+  .tagline {
+    color: var(--text-secondary);
+    font-size: 1.05rem;
+    font-weight: 400;
   }
 
-  .subtitle {
-    color: #8b949e;
-    margin-bottom: 32px;
-    font-size: 0.95rem;
+  /* Card */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 32px;
+    backdrop-filter: blur(20px);
+    box-shadow: 0 8px 40px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.04);
   }
 
-  label {
+  /* Form elements */
+  .field { margin-bottom: 24px; }
+
+  .field-label {
     display: block;
+    font-size: 0.8rem;
     font-weight: 600;
-    margin-bottom: 6px;
-    font-size: 0.9rem;
-    color: #c9d1d9;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
   }
 
   textarea {
     width: 100%;
-    height: 140px;
-    padding: 12px;
-    border: 1px solid #30363d;
-    border-radius: 8px;
-    background: #161b22;
-    color: #e1e4e8;
-    font-size: 1rem;
+    height: 150px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-2);
+    color: var(--text);
+    font-size: 0.95rem;
     font-family: inherit;
+    line-height: 1.6;
     resize: vertical;
-    margin-bottom: 20px;
     outline: none;
-    transition: border-color 0.2s;
+    transition: all 0.25s ease;
   }
 
-  textarea:focus { border-color: #58a6ff; }
+  textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+  }
+
+  textarea::placeholder { color: #4a4a5c; }
+
+  .char-count {
+    text-align: right;
+    font-size: 0.75rem;
+    color: #4a4a5c;
+    margin-top: 6px;
+  }
 
   .row {
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
     gap: 16px;
-    margin-bottom: 20px;
   }
 
-  .row > div { flex: 1; }
-
-  select, input[type="file"] {
+  select {
     width: 100%;
-    padding: 10px 12px;
-    border: 1px solid #30363d;
-    border-radius: 8px;
-    background: #161b22;
-    color: #e1e4e8;
+    padding: 12px 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-2);
+    color: var(--text);
     font-size: 0.9rem;
+    font-family: inherit;
     outline: none;
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%237a7a8e' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+    transition: all 0.25s ease;
+  }
+
+  select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+  }
+
+  /* Custom file upload */
+  .upload-zone {
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .upload-zone:hover {
+    border-color: var(--accent);
+    background: rgba(124,92,252,0.04);
+  }
+
+  .upload-zone.has-file {
+    border-color: var(--green);
+    background: rgba(16,185,129,0.04);
+  }
+
+  .upload-zone input[type="file"] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
     cursor: pointer;
   }
 
-  select:focus { border-color: #58a6ff; }
+  .upload-icon { margin-bottom: 8px; }
+  .upload-icon svg { width: 28px; height: 28px; stroke: var(--text-secondary); fill: none; stroke-width: 1.5; }
 
-  .file-upload {
-    margin-bottom: 20px;
+  .upload-text {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
   }
 
-  .file-upload input[type="file"] {
-    padding: 10px;
-  }
+  .upload-text strong { color: var(--accent); }
 
-  .file-hint {
-    font-size: 0.8rem;
-    color: #8b949e;
+  .upload-filename {
+    font-size: 0.85rem;
+    color: var(--green);
+    font-weight: 500;
     margin-top: 4px;
   }
 
-  button {
-    padding: 12px 24px;
-    border: none;
-    border-radius: 8px;
-    font-size: 1rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s;
+  /* Divider */
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 20px 0;
   }
 
+  .divider::before, .divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .divider span {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #4a4a5c;
+    font-weight: 500;
+  }
+
+  /* Generate button */
   .btn-generate {
     width: 100%;
-    background: #238636;
+    padding: 16px 32px;
+    border: none;
+    border-radius: var(--radius);
+    background: linear-gradient(135deg, var(--accent), #6a4ae8);
     color: #fff;
-    margin-bottom: 24px;
-  }
-
-  .btn-generate:hover { background: #2ea043; }
-  .btn-generate:disabled {
-    background: #21262d;
-    color: #484f58;
-    cursor: not-allowed;
-  }
-
-  .btn-download {
-    background: #1f6feb;
-    color: #fff;
-    margin-top: 12px;
-  }
-
-  .btn-download:hover { background: #388bfd; }
-
-  .result {
-    display: none;
-    background: #161b22;
-    border: 1px solid #30363d;
-    border-radius: 8px;
-    padding: 20px;
-    text-align: center;
-  }
-
-  .result.visible { display: block; }
-
-  .result h3 {
-    margin-bottom: 16px;
     font-size: 1rem;
-    color: #58a6ff;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 4px 20px var(--accent-glow);
   }
 
-  audio {
-    width: 100%;
-    margin-bottom: 4px;
+  .btn-generate::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(255,255,255,0.1), transparent);
+    opacity: 0;
+    transition: opacity 0.3s;
   }
 
+  .btn-generate:hover::before { opacity: 1; }
+  .btn-generate:hover { transform: translateY(-1px); box-shadow: 0 6px 30px rgba(124,92,252,0.35); }
+  .btn-generate:active { transform: translateY(0); }
+
+  .btn-generate:disabled {
+    background: var(--surface-2);
+    color: #4a4a5c;
+    cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
+  }
+
+  .btn-generate:disabled::before { display: none; }
+
+  .btn-content {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .btn-content svg { width: 20px; height: 20px; fill: currentColor; }
+
+  /* Spinner */
   .spinner {
     display: none;
-    justify-content: center;
+    flex-direction: column;
     align-items: center;
-    gap: 10px;
-    padding: 30px;
-    color: #8b949e;
-    font-size: 0.95rem;
+    gap: 16px;
+    padding: 40px 20px;
   }
 
   .spinner.visible { display: flex; }
 
-  .spinner-dot {
-    width: 10px;
-    height: 10px;
-    background: #58a6ff;
+  .spinner-ring {
+    width: 48px;
+    height: 48px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
     border-radius: 50%;
-    animation: bounce 1.4s infinite ease-in-out both;
+    animation: spin 0.8s linear infinite;
   }
 
-  .spinner-dot:nth-child(1) { animation-delay: -0.32s; }
-  .spinner-dot:nth-child(2) { animation-delay: -0.16s; }
+  @keyframes spin { to { transform: rotate(360deg); } }
 
-  @keyframes bounce {
-    0%, 80%, 100% { transform: scale(0); }
-    40% { transform: scale(1); }
-  }
-
-  .error {
-    display: none;
-    background: #3d1214;
-    border: 1px solid #f85149;
-    border-radius: 8px;
-    padding: 12px 16px;
-    margin-bottom: 16px;
-    color: #f85149;
+  .spinner-text {
+    color: var(--text-secondary);
     font-size: 0.9rem;
   }
 
-  .error.visible { display: block; }
+  .spinner-timer {
+    font-variant-numeric: tabular-nums;
+    color: var(--accent);
+    font-weight: 600;
+    font-size: 0.85rem;
+  }
 
-  .char-count {
-    text-align: right;
-    font-size: 0.8rem;
-    color: #484f58;
-    margin-top: -16px;
+  /* Error */
+  .error {
+    display: none;
+    background: rgba(239,68,68,0.08);
+    border: 1px solid rgba(239,68,68,0.2);
+    border-radius: var(--radius);
+    padding: 14px 18px;
+    margin-bottom: 20px;
+    color: #fca5a5;
+    font-size: 0.9rem;
+    line-height: 1.5;
+  }
+
+  .error.visible { display: flex; align-items: center; gap: 10px; }
+  .error svg { width: 18px; height: 18px; fill: var(--red); flex-shrink: 0; }
+
+  /* Result */
+  .result {
+    display: none;
+    margin-top: 28px;
+  }
+
+  .result.visible { display: block; animation: slideUp 0.4s ease; }
+
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .result-card {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+  }
+
+  .result-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     margin-bottom: 16px;
+  }
+
+  .result-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--green);
+  }
+
+  .result-title svg { width: 16px; height: 16px; fill: var(--green); }
+
+  .result-meta {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+  }
+
+  audio {
+    width: 100%;
+    height: 48px;
+    border-radius: 8px;
+    outline: none;
+  }
+
+  audio::-webkit-media-controls-panel { background: var(--surface); }
+
+  .result-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 16px;
+  }
+
+  .btn-action {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 20px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: transparent;
+    color: var(--text);
+    font-size: 0.85rem;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .btn-action:hover {
+    border-color: var(--border-hover);
+    background: var(--surface);
+  }
+
+  .btn-action svg { width: 16px; height: 16px; fill: currentColor; }
+
+  .btn-action.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+
+  .btn-action.primary:hover { background: var(--accent-hover); }
+
+  /* Footer */
+  .footer {
+    text-align: center;
+    margin-top: 40px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+    font-size: 0.75rem;
+    color: #3a3a4c;
+  }
+
+  /* Responsive */
+  @media (max-width: 600px) {
+    .page { padding: 24px 16px 60px; }
+    .card { padding: 24px 20px; }
+    .row { grid-template-columns: 1fr; }
+    .result-actions { flex-direction: column; }
   }
 </style>
 </head>
 <body>
-<div class="container">
-  <h1>DFY Voice</h1>
-  <p class="subtitle">Text-to-Speech powered by Chatterbox</p>
-
-  <div class="error" id="error"></div>
-
-  <label for="text">Text</label>
-  <textarea id="text" placeholder="Type or paste the text you want to convert to speech..."></textarea>
-  <div class="char-count"><span id="charCount">0</span> characters</div>
-
-  <div class="row">
-    <div>
-      <label for="voiceSelect">Voice</label>
-      <select id="voiceSelect">
-        <option value="">Default</option>
-      </select>
+<div class="page">
+  <header class="header">
+    <div class="logo">
+      <div class="logo-icon">
+        <svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3zM19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/></svg>
+      </div>
+      <span class="logo-text">DFY Voice</span>
     </div>
-    <div>
-      <label for="language">Language</label>
-      <select id="language">
-        <option value="en">English</option>
-        <option value="ar">Arabic</option>
-        <option value="cs">Czech</option>
-        <option value="de">German</option>
-        <option value="es">Spanish</option>
-        <option value="fr">French</option>
-        <option value="hi">Hindi</option>
-        <option value="hu">Hungarian</option>
-        <option value="it">Italian</option>
-        <option value="ja">Japanese</option>
-        <option value="ko">Korean</option>
-        <option value="nl">Dutch</option>
-        <option value="pl">Polish</option>
-        <option value="pt">Portuguese</option>
-        <option value="ro">Romanian</option>
-        <option value="ru">Russian</option>
-        <option value="sv">Swedish</option>
-        <option value="tr">Turkish</option>
-        <option value="zh">Chinese</option>
-      </select>
+    <p class="tagline">Transform text into natural speech with AI</p>
+  </header>
+
+  <div class="card">
+    <div class="error" id="error">
+      <svg viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z"/></svg>
+      <span id="errorText"></span>
+    </div>
+
+    <div class="field">
+      <label class="field-label" for="text">Your Text</label>
+      <textarea id="text" placeholder="Enter the text you want to convert to speech..."></textarea>
+      <div class="char-count"><span id="charCount">0</span> characters</div>
+    </div>
+
+    <div class="field">
+      <div class="row">
+        <div>
+          <label class="field-label" for="voiceSelect">Voice</label>
+          <select id="voiceSelect">
+            <option value="">Default</option>
+          </select>
+        </div>
+        <div>
+          <label class="field-label" for="language">Language</label>
+          <select id="language">
+            <option value="en">English</option>
+            <option value="ar">Arabic</option>
+            <option value="cs">Czech</option>
+            <option value="de">German</option>
+            <option value="es">Spanish</option>
+            <option value="fr">French</option>
+            <option value="hi">Hindi</option>
+            <option value="hu">Hungarian</option>
+            <option value="it">Italian</option>
+            <option value="ja">Japanese</option>
+            <option value="ko">Korean</option>
+            <option value="nl">Dutch</option>
+            <option value="pl">Polish</option>
+            <option value="pt">Portuguese</option>
+            <option value="ro">Romanian</option>
+            <option value="ru">Russian</option>
+            <option value="sv">Swedish</option>
+            <option value="tr">Turkish</option>
+            <option value="zh">Chinese</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"><span>or clone a voice</span></div>
+
+    <div class="field">
+      <div class="upload-zone" id="uploadZone">
+        <input type="file" id="voiceFile" accept=".wav">
+        <div class="upload-icon">
+          <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        </div>
+        <div class="upload-text">
+          <strong>Upload a WAV file</strong> to clone any voice<br>
+          ~10 second recording recommended
+        </div>
+        <div class="upload-filename" id="uploadFilename"></div>
+      </div>
+    </div>
+
+    <button class="btn-generate" id="generateBtn" onclick="generate()">
+      <span class="btn-content">
+        <svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        Generate Speech
+      </span>
+    </button>
+
+    <div class="spinner" id="spinner">
+      <div class="spinner-ring"></div>
+      <div class="spinner-text">Generating your audio...</div>
+      <div class="spinner-timer" id="timer">0s</div>
+    </div>
+
+    <div class="result" id="result">
+      <div class="result-card">
+        <div class="result-header">
+          <div class="result-title">
+            <svg viewBox="0 0 20 20"><path d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z"/></svg>
+            Audio Ready
+          </div>
+          <span class="result-meta" id="resultMeta"></span>
+        </div>
+        <audio id="audio" controls></audio>
+        <div class="result-actions">
+          <button class="btn-action" onclick="replayAudio()">
+            <svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Replay
+          </button>
+          <button class="btn-action primary" onclick="download()">
+            <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Download MP3
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 
-  <div class="file-upload">
-    <label for="voiceFile">Or Upload Custom Voice (optional)</label>
-    <input type="file" id="voiceFile" accept=".wav">
-    <p class="file-hint">Upload a ~10 second WAV recording to clone that voice. Overrides the dropdown above.</p>
-  </div>
-
-  <button class="btn-generate" id="generateBtn" onclick="generate()">Generate Speech</button>
-
-  <div class="spinner" id="spinner">
-    <div class="spinner-dot"></div>
-    <div class="spinner-dot"></div>
-    <div class="spinner-dot"></div>
-    <span>Generating audio... this takes ~30 seconds</span>
-  </div>
-
-  <div class="result" id="result">
-    <h3>Your Audio</h3>
-    <audio id="audio" controls></audio>
-    <button class="btn-download" onclick="download()">Download MP3</button>
+  <div class="footer">
+    Powered by Chatterbox TTS &middot; DFY Voice
   </div>
 </div>
 
 <script>
 let audioBlob = null;
+let timerInterval = null;
 
 const textEl = document.getElementById('text');
 const charCount = document.getElementById('charCount');
@@ -277,7 +594,22 @@ textEl.addEventListener('input', () => {
   charCount.textContent = textEl.value.length;
 });
 
-// Load available voices on page load
+// File upload visual feedback
+const voiceFileEl = document.getElementById('voiceFile');
+const uploadZone = document.getElementById('uploadZone');
+const uploadFilename = document.getElementById('uploadFilename');
+
+voiceFileEl.addEventListener('change', () => {
+  if (voiceFileEl.files[0]) {
+    uploadZone.classList.add('has-file');
+    uploadFilename.textContent = voiceFileEl.files[0].name;
+  } else {
+    uploadZone.classList.remove('has-file');
+    uploadFilename.textContent = '';
+  }
+});
+
+// Load voices
 async function loadVoices() {
   try {
     const res = await fetch('/voices');
@@ -296,23 +628,36 @@ async function loadVoices() {
 loadVoices();
 
 function showError(msg) {
-  const el = document.getElementById('error');
-  el.textContent = msg;
-  el.classList.add('visible');
+  document.getElementById('errorText').textContent = msg;
+  document.getElementById('error').classList.add('visible');
 }
 
 function hideError() {
   document.getElementById('error').classList.remove('visible');
 }
 
+function startTimer() {
+  let seconds = 0;
+  const timerEl = document.getElementById('timer');
+  timerEl.textContent = '0s';
+  timerInterval = setInterval(() => {
+    seconds++;
+    timerEl.textContent = seconds + 's';
+  }, 1000);
+}
+
+function stopTimer() {
+  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+}
+
 async function generate() {
   hideError();
   const text = textEl.value.trim();
-  if (!text) { showError('Please enter some text.'); return; }
+  if (!text) { showError('Please enter some text to generate speech.'); return; }
 
   const language = document.getElementById('language').value;
   const voiceSelect = document.getElementById('voiceSelect').value;
-  const voiceFile = document.getElementById('voiceFile').files[0];
+  const voiceFile = voiceFileEl.files[0];
   const btn = document.getElementById('generateBtn');
   const spinner = document.getElementById('spinner');
   const result = document.getElementById('result');
@@ -320,6 +665,9 @@ async function generate() {
   btn.disabled = true;
   spinner.classList.add('visible');
   result.classList.remove('visible');
+  startTimer();
+
+  const startTime = Date.now();
 
   try {
     const formData = new FormData();
@@ -327,7 +675,6 @@ async function generate() {
 
     let url = '/tts';
     if (voiceFile) {
-      // Custom upload overrides everything
       formData.append('voice', voiceFile);
       url = '/tts-clone';
     } else {
@@ -345,17 +692,29 @@ async function generate() {
     }
 
     audioBlob = await res.blob();
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    const sizeKB = (audioBlob.size / 1024).toFixed(0);
+
     const audioUrl = URL.createObjectURL(audioBlob);
     const audio = document.getElementById('audio');
     audio.src = audioUrl;
     audio.play();
+
+    document.getElementById('resultMeta').textContent = `${elapsed}s \u00b7 ${sizeKB} KB`;
     result.classList.add('visible');
   } catch (e) {
     showError(e.message);
   } finally {
     btn.disabled = false;
     spinner.classList.remove('visible');
+    stopTimer();
   }
+}
+
+function replayAudio() {
+  const audio = document.getElementById('audio');
+  audio.currentTime = 0;
+  audio.play();
 }
 
 function download() {
