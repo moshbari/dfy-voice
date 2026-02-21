@@ -37,7 +37,22 @@ def load_models():
 
     start = time.time()
     from chatterbox.mtl_tts import ChatterboxMultilingualTTS
+
+    # Workaround: multilingual model doesn't pass map_location to torch.load,
+    # which crashes on CPU-only machines. Patch torch.load temporarily.
+    # See: https://github.com/resemble-ai/chatterbox/issues/351
+    if device == "cpu":
+        _original_torch_load = torch.load
+        def _cpu_torch_load(*args, **kwargs):
+            kwargs.setdefault("map_location", torch.device("cpu"))
+            return _original_torch_load(*args, **kwargs)
+        torch.load = _cpu_torch_load
+
     multilingual_model = ChatterboxMultilingualTTS.from_pretrained(device=device)
+
+    if device == "cpu":
+        torch.load = _original_torch_load
+
     logger.info(f"ChatterboxMultilingual loaded in {time.time() - start:.1f}s")
 
 
